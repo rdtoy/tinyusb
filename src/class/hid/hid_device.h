@@ -647,6 +647,9 @@ uint16_t hidd_open            (uint8_t rhport, tusb_desc_interface_t const * itf
 bool     hidd_control_xfer_cb (uint8_t rhport, uint8_t stage, tusb_control_request_t const * request);
 bool     hidd_xfer_cb         (uint8_t rhport, uint8_t ep_addr, xfer_result_t event, uint32_t xferred_bytes);
 
+// Deferred GET_REPORT (CFG_TUD_HID_DEFER_GET_REPORT). New file, see hid_device_getrpt.h.
+#include "hid_device_getrpt.h"
+
 #ifdef __cplusplus
  }
 #endif

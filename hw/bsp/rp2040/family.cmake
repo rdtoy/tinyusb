@@ -100,6 +100,7 @@ target_sources(tinyusb_device_base INTERFACE
 		${TOP}/src/class/dfu/dfu_device.c
 		${TOP}/src/class/dfu/dfu_rt_device.c
 		${TOP}/src/class/hid/hid_device.c
+		${TOP}/src/class/hid/hid_device_getrpt.c
 		${TOP}/src/class/midi/midi_device.c
 		${TOP}/src/class/midi/midi2_device.c
 		${TOP}/src/class/msc/msc_device.c

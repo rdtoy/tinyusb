@@ -17,6 +17,10 @@
 
 #include "hid_device.h"
 
+// Deferred GET_REPORT (CFG_TUD_HID_DEFER_GET_REPORT). Self-contained in a new file, see
+// hid_device_getrpt.h for why and for how to re-apply after re-syncing lib/tinyusb.
+#include "hid_device_getrpt.h"
+
 //--------------------------------------------------------------------+
 // MACRO CONSTANT TYPEDEF
 //--------------------------------------------------------------------+
@@ -199,6 +203,10 @@ bool hidd_deinit(void) {
 void hidd_reset(uint8_t rhport) {
   (void)rhport;
   tu_memclr(_hidd_itf, sizeof(_hidd_itf));
+
+#if CFG_TUD_HID_DEFER_GET_REPORT
+  hidd_getrpt_reset(); // bus reset kills any parked GET_REPORT
+#endif
 }
 
 uint16_t hidd_open(uint8_t rhport, tusb_desc_interface_t const *desc_itf, uint16_t max_len) {
@@ -296,7 +304,26 @@ bool hidd_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_request_t 
             xferlen++;
           }
 
+#if CFG_TUD_HID_DEFER_GET_REPORT
+          // Recorded before the callback so the callback can inspect the request via
+          // tud_hid_n_get_report_pending_length(); returning 0 then simply leaves it
+          // recorded, i.e. parked with EP0 not armed. The park decision is on cb_len
+          // alone -- with a report id, xferlen already carries the prefix byte and would
+          // look non-zero even when the callback produced nothing.
+          hidd_getrpt_hold(rhport, hid_itf, request);
+
+          uint16_t const cb_len = tud_hid_get_report_cb(hid_itf, report_id, (hid_report_type_t) report_type, report_buf, req_len);
+          if (cb_len == 0 || !hidd_getrpt_is_pending()) {
+            // cb_len == 0: parked, answered later. !pending with cb_len > 0 means the
+            // application already completed or cancelled it from inside the callback, so
+            // EP0 is already taken care of -- arming it again here would corrupt that
+            // transfer.
+            break;
+          }
+          xferlen += cb_len;
+#else
           xferlen += tud_hid_get_report_cb(hid_itf, report_id, (hid_report_type_t) report_type, report_buf, req_len);
+#endif
           TU_ASSERT(xferlen > 0);
 
           tud_control_xfer(rhport, request, p_epbuf->ctrl, xferlen);
@@ -320,6 +347,11 @@ bool hidd_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_request_t 
             report_len--;
           }
 
+#if CFG_TUD_HID_DEFER_GET_REPORT
+          hidd_set_report_note_src(report_buf != p_epbuf->ctrl
+                                       ? TUD_HID_SET_REPORT_SRC_CONTROL_WITH_ID
+                                       : TUD_HID_SET_REPORT_SRC_CONTROL_NO_ID);
+#endif
           tud_hid_set_report_cb(hid_itf, report_id, (hid_report_type_t) report_type, report_buf, report_len);
         }
         break;
@@ -387,6 +419,9 @@ bool hidd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_
     }
   } else {
     // Output report
+#if CFG_TUD_HID_DEFER_GET_REPORT
+    hidd_set_report_note_src(TUD_HID_SET_REPORT_SRC_EP_OUT);
+#endif
     if (XFER_RESULT_SUCCESS == result) {
       tud_hid_set_report_cb(instance, 0, HID_REPORT_TYPE_OUTPUT, p_epbuf->epout, (uint16_t)xferred_bytes);
     } else {
